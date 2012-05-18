@@ -53,6 +53,19 @@ by hitting enter. If you do not have any code that kibit thinks it can
 improve, then it will exit happily and the compilation step will
 report success.
 
+## Reverse Double Secret Next Level Maneuver
+
+If you add the following to your emacs config:
+
+```
+(add-hook 'clojure-mode-hook 'flymake-mode-on)
+```
+
+Then kibit-mode will be registered as a flymake checker and check your
+code for you as you write. It will highlight the line which starts the
+form relevant to kibit's suggestion. This part is pretty ugly and
+hacked together with a shell script, be warned.
+
 ## License
 
 Copyright (C) 2012 Alex Redington
