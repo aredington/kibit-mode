@@ -33,9 +33,9 @@ if you also use el-get, if you do not use el-get you are on your own.
 ## Usage
 
 In an open Clojure buffer, hit C-c C-n (you can use the mnemonic that
-this will help you catch *N*oob mistakes) to open a compilation buffer
-that will tell you where you can replace code with a terser, more
-idiomatic expression of the same semantics.
+this **C**ompilation tool will help you catch **N**oob mistakes) to
+open a compilation buffer that will tell you where you can replace
+code with a terser, more idiomatic expression of the same semantics.
 
 ## License
 
