@@ -57,6 +57,7 @@
 ;;; Code:
 
 (require 'clojure-mode)
+(require 'compile)
 
 (defconst kibit-mode-keymap (make-sparse-keymap) "Keymap used in kibit mode")
 
