@@ -37,6 +37,22 @@ this **C**ompilation tool will help you catch **N**oob mistakes) to
 open a compilation buffer that will tell you where you can replace
 code with a terser, more idiomatic expression of the same semantics.
 
+The compilation buffer will output formatted filename and line number
+indicators of kibits suggestions, like follows:
+
+```
+/Users/alex/projects/pi/src/pi/core.clj:5:
+  Replace
+    (if (even? x) x nil)
+  with
+    (when (even? x) x)
+```
+
+You can jump immediately to the suggestion from the compilation buffer
+by hitting enter. If you do not have any code that kibit thinks it can
+improve, then it will exit happily and the compilation step will
+report success.
+
 ## License
 
 Copyright (C) 2012 Alex Redington
