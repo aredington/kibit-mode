@@ -7,10 +7,10 @@ idiomatic.
 
 ## Requirements
 
-[Emacs](http://www.gnu.org/software/emacs/) 24.0 or greater
-[Clojure](http://clojure.org) 1.4 or greater
-[Leiningen](https://github.com/technomancy/leiningen) 1.6.2 or greater
-[clojure-mode](https://github.com/technomancy/clojure-mode) 1.11.5 or greater
+* [Emacs](http://www.gnu.org/software/emacs/) 24.0 or greater
+* [Clojure](http://clojure.org) 1.4 or greater
+* [Leiningen](https://github.com/technomancy/leiningen) 1.6.2 or greater
+* [clojure-mode](https://github.com/technomancy/clojure-mode) 1.11.5 or greater
 
 ## Configuration
 
