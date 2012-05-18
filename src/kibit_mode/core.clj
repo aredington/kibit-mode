@@ -16,17 +16,15 @@
                 (pr-str alt)
                 )))
 
-
-
 (defn check-file
-  [file]
+  [file reporter]
   (with-open [reader (io/reader file)]
     (let [errors (c/check-reader reader)]
       (doseq [simplify-map errors]
-        (report-error file simplify-map))
+        (reporter file simplify-map))
       errors)))
 
 (defn -main
   [file]
-  (when-not (empty? (check-file file))
+  (when-not (empty? (check-file file report-error))
     (System/exit 1)))

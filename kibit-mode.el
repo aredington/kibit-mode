@@ -84,15 +84,30 @@ Emacs Lisp package."))
 (defun kibit-check ()
   "Runs the current file through kibit check"
   (interactive)
-  (let ((start-directory default-directory))
-    (cd kibit-mode-path)
+  (let ((default-directory kibit-mode-path))
     (compile (concat "lein run -m kibit-mode.core "
-                     (buffer-file-name)))
-    (cd start-directory)))
+                     (buffer-file-name)))))
 
 (add-to-list 'compilation-error-regexp-alist-alist
-	     '(kibit-mode "\\([0-9A-Za-z_./\:-]+\\.clj\\):\\([0-9]+\\):" 1 2))
+             '(kibit-mode "\\([0-9A-Za-z_./\:-]+\\.clj\\):\\([0-9]+\\):" 1 2))
 (add-to-list 'compilation-error-regexp-alist 'kibit-mode)
+
+(require 'flymake)
+(defun flymake-kibit-init ()
+  (flymake-simple-make-init-impl
+   'flymake-create-temp-with-folder-structure nil nil
+   buffer-file-name
+   'flymake-get-kibit-cmdline))
+
+(defun flymake-get-kibit-cmdline (source base-dir)
+  (list (concat kibit-mode-path "bin/kibit-flymake.sh") (list source) kibit-mode-path))
+
+(push '(".+\\.clj$" flymake-kibit-init) flymake-allowed-file-name-masks)
+(push '(".+\\.cljs$" flymake-kibit-init) flymake-allowed-file-name-masks)
+
+(push '("\\(.*\\):\\([0-9]+\\): \\(ERROR: .* CORRECTION: .*\\)"
+        1 2 nil 3)
+      flymake-err-line-patterns)
 
 (provide 'kibit-mode)
 ;;; kibit-mode.el ends here
