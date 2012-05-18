@@ -84,9 +84,11 @@ Emacs Lisp package."))
 (defun kibit-check ()
   "Runs the current file through kibit check"
   (interactive)
-  (cd kibit-mode-path)
-  (compile (concat "lein run -m kibit-mode.core "
-                   (buffer-file-name))))
+  (let ((start-directory default-directory))
+    (cd kibit-mode-path)
+    (compile (concat "lein run -m kibit-mode.core "
+                     (buffer-file-name)))
+    (cd start-directory)))
 
 (add-to-list 'compilation-error-regexp-alist-alist
 	     '(kibit-mode "\\([0-9A-Za-z_./\:-]+\\.clj\\):\\([0-9]+\\):" 1 2))
