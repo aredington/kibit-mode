@@ -64,3 +64,13 @@
   \"Who'd implement this this way?\"
   [foo]
   (+ foo 1))" }]))
+
+;; detailed-exprs
+(let [df-reader (make-detailed-form-reader (io/reader "bogus_src/bogus.clj"))
+      first-form (detailed-read df-reader)
+      first-form-exprs (detailed-exprs first-form)]
+  (fact first-form-exprs => '((ns bogus-src.bogus) ns bogus-src.bogus))
+  (fact (meta (nth first-form-exprs 0)) => {:line 1 :start-character 0 :end-line 1 :end-character 20 :source "(ns bogus-src.bogus)"})
+  (fact (meta (nth first-form-exprs 1)) => {:line 1 :start-character 1 :end-line 1 :end-character 3 :source "ns"})
+  (fact (meta (nth first-form-exprs 2)) => {:line 1 :start-character 4 :end-line 1 :end-character 19 :source "bogus-src.bogus"}))
+

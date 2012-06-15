@@ -133,8 +133,8 @@
          :source (apply str (reverse (:source-chars @stats)))}))))
 
 (defn detailed-forms
-  "Return a seq of all the forms from detailed-form-reader, including
-  detailed metadata for :line, :end-line, :start-character,
+  "Return a seq of all the top-level forms from detailed-form-reader,
+  including detailed metadata for :line, :end-line, :start-character,
   and :end-character"
   [detailed-form-reader]
   (let [read-result (detailed-read detailed-form-reader false :eof)]
@@ -143,8 +143,22 @@
         (cons read-result
               (detailed-forms detailed-form-reader))))))
 
+
+(defn- detailed-exprs-with-meta
+  [form]
+  (tree-seq sequential? seq form))
+
+(defn detailed-exprs
+  "Return a seq of all the exprs in form. If form has detailed
+  metadata (as is provided by detailed-read), each expr will also have
+  the correct detailed metadata attached."
+  [form]
+  (if (= (keys (meta form)) #{:line :start-character :end-line :end-character :source})
+    (detailed-exprs-with-meta form)
+    (tree-seq sequential? seq form)))
+
 (defn assoc-reporter
-  "Given a kibit simplification map, print an emacs-lispy."
+  "Given a kibit simplification map, print an emacs-lispy version of it."
   [file {:keys [expr alt line] :as simplify-map}]
   (println (str "'((file . \""
                 file
