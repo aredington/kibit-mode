@@ -17,21 +17,21 @@
   ([reader eof-error?] (detailed-read reader eof-error? nil))
   ([reader eof-error? eof-value] (detailed-read reader eof-error? eof-value false))
   ([reader eof-error? eof-value recursive?]
-    (let [form (clojure.core/read reader eof-error? eof-value recursive?)
-          {start-line :line} (meta form)
-          end-line (.getLineNumber reader)
-          details (.resetStats reader)
-          start-character (:start-character details)
-          end-character (:current-character details)
-          source (:source details)]
-      (if (and (not eof-error?)
-               (= form eof-value))
-        eof-value
-        (with-meta form {:line start-line
-                         :end-line end-line
-                         :start-character start-character
-                         :end-character end-character
-                         :source source})))))
+     (let [form (clojure.core/read reader eof-error? eof-value recursive?)
+           {start-line :line} (meta form)
+           end-line (.getLineNumber reader)
+           details (.resetStats reader)
+           start-character (:start-character details)
+           end-character (:current-character details)
+           source (:source details)]
+       (if (and (not eof-error?)
+                (= form eof-value))
+         eof-value
+         (with-meta form {:line start-line
+                          :end-line end-line
+                          :start-character start-character
+                          :end-character end-character
+                          :source source})))))
 (gen-interface
  :name kibit-mode.core.DetailedFormReader
  :methods [
@@ -51,13 +51,13 @@
   "Update stats after reading the character result"
   [stats c]
   (let [new-stats (-> stats
-                  (update-in [:total-read] inc)
-                  (update-in [:start-character] (if (and (whitespace? c)
-                                                         (:only-whitespace stats))
-                                                  inc
-                                                  identity))
-                  (assoc-in [:only-whitespace] (and (:only-whitespace stats)
-                                                    (whitespace? c))))
+                      (update-in [:total-read] inc)
+                      (update-in [:start-character] (if (and (whitespace? c)
+                                                             (:only-whitespace stats))
+                                                      inc
+                                                      identity))
+                      (assoc-in [:only-whitespace] (and (:only-whitespace stats)
+                                                        (whitespace? c))))
         character (try (char c) (catch Exception e nil))]
     (if (and character (not (:only-whitespace new-stats)))
       (update-in new-stats [:source-chars] conj character)
@@ -79,11 +79,11 @@
   [stats line]
   (if line
     (-> stats
-       (update-in [:total-read]
-                  +
-                  (inc (count line)))
-       (update-in [:source-chars] concat (conj (reverse (seq line)) \newline))
-       stats)))
+        (update-in [:total-read]
+                   +
+                   (inc (count line)))
+        (update-in [:source-chars] concat (conj (reverse (seq line)) \newline))
+        stats)))
 
 (defn- reset-stats-update-fn
   "Reset stats based on the current state of reader"
@@ -143,10 +143,31 @@
         (cons read-result
               (detailed-forms detailed-form-reader))))))
 
+(defprotocol SourceMatchable
+  "Objects which can indicate a regular expression which, when applied
+  to strings, matches the portion of the string which would generate
+  that object when the string is read."
+  (source-match [this]))
+
+(extend-protocol SourceMatchable
+  clojure.lang.Symbol
+  (source-match [this] (re-pattern (name this))))
+
+(defn detailed-meta
+  "Returns detailed metadata for obj, which is contained in
+  parent. parent must have detailed metadata as returned by
+  detailed-read."
+  [parent obj]
+  (let [parent-meta (meta parent)]
+    (with-meta obj {:line (:line parent-meta)
+                    :start-character (:start-character parent-meta)
+                    :end-character (:end-character parent-meta)
+                    :end-line (:end-line parent-meta)
+                    :source (:source parent-meta)})))
 
 (defn- detailed-exprs-with-meta
   [form]
-  (tree-seq sequential? seq form))
+  (tree-seq sequential? #(map (partial detailed-meta %) (seq %)) form))
 
 (defn detailed-exprs
   "Return a seq of all the exprs in form. If form has detailed
