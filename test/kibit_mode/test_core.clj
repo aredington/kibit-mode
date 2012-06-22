@@ -4,6 +4,7 @@
   (:require [clojure.java.io :as io]
             [clojure.set :as s]))
 
+;;; detailed reader tests
 (fact (#'kibit-mode.core/read-update-fn
        {:start-character 20
         :total-read 20
@@ -22,6 +23,7 @@
     (fact (char read-result) => \newline)
     (fact (:start-character stats) => 21)))
 
+;;; type checking
 (let [df-reader (make-detailed-form-reader (io/reader "bogus_src/bogus.clj"))]
   (fact (s/intersection
          (ancestors (class df-reader))
@@ -29,7 +31,7 @@
            kibit-mode.core.DetailedFormReader}) => #{clojure.lang.LineNumberingPushbackReader
                                                      kibit-mode.core.DetailedFormReader}))
 
-;; metadata tests
+;;; metadata tests
 (let [df-reader (make-detailed-form-reader (io/reader "bogus_src/bogus.clj"))
       first-form (detailed-read df-reader)
       second-form (detailed-read df-reader)]
@@ -48,7 +50,7 @@
   [foo]
   (+ foo 1))"))
 
-;; detailed-forms
+;;; detailed-forms
 (let [forms (detailed-forms (make-detailed-form-reader (io/reader "bogus_src/bogus.clj")))]
   (fact (map meta forms) =>
         [{:line 1
@@ -65,7 +67,7 @@
   [foo]
   (+ foo 1))" }]))
 
-;; detailed-exprs
+;;; detailed-exprs
 (let [df-reader (make-detailed-form-reader (io/reader "bogus_src/bogus.clj"))
       first-form (detailed-read df-reader)
       first-form-exprs (detailed-exprs first-form)]

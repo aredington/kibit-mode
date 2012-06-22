@@ -158,12 +158,17 @@
   parent. parent must have detailed metadata as returned by
   detailed-read."
   [parent obj]
-  (let [parent-meta (meta parent)]
+  (let [parent-meta (meta parent)
+        matcher (re-matcher (source-match obj) (:source parent-meta))
+        matches (.find matcher)
+        start (.start matcher)
+        end (.end matcher)
+        source (.group matcher)]
     (with-meta obj {:line (:line parent-meta)
-                    :start-character (:start-character parent-meta)
-                    :end-character (:end-character parent-meta)
+                    :start-character start
+                    :end-character end
                     :end-line (:end-line parent-meta)
-                    :source (:source parent-meta)})))
+                    :source source})))
 
 (defn- detailed-exprs-with-meta
   [form]
@@ -174,7 +179,7 @@
   metadata (as is provided by detailed-read), each expr will also have
   the correct detailed metadata attached."
   [form]
-  (if (= (keys (meta form)) #{:line :start-character :end-line :end-character :source})
+  (if (= (set (keys (meta form))) #{:line :start-character :end-line :end-character :source})
     (detailed-exprs-with-meta form)
     (tree-seq sequential? seq form)))
 
