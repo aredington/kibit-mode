@@ -1,7 +1,8 @@
 (ns kibit-mode.core
   (:require [kibit.check :as c]
             [clojure.java.io :as io]
-            [clojure.string :as s]))
+            [clojure.string :as s])
+  (:import (java.util.regex Pattern)))
 
 (defn detailed-read
   "Read a form from DetailedFormReader reader,
@@ -143,36 +144,60 @@
         (cons read-result
               (detailed-forms detailed-form-reader))))))
 
-(defprotocol SourceMatchable
-  "Objects which can indicate a regular expression which, when applied
-  to strings, matches the portion of the string which would generate
-  that object when the string is read."
-  (source-match [this]))
+(defprotocol Detailable
+  "Objects which can have detailed source information about them described."
+  (source-match [this] "Returns a string specification of a Java
+  regular expression which, when applied to strings, matches the
+  portion of the string which would generate this when the string is
+  read.")
+  (detailed-meta [this parent] "Returns detailed metadata for this,
+  which is contained in parent. parent must have detailed metadata as
+  returned by detailed-read."))
 
-(extend-protocol SourceMatchable
-  clojure.lang.Symbol
-  (source-match [this] (re-pattern (name this))))
-
-(defn detailed-meta
-  "Returns detailed metadata for obj, which is contained in
-  parent. parent must have detailed metadata as returned by
-  detailed-read."
-  [parent obj]
-  (let [parent-meta (meta parent)
-        matcher (re-matcher (source-match obj) (:source parent-meta))
+(defn- -detailed-meta
+  [this parent]
+  (let [{parent-start :start-character
+         parent-end :end-character
+         parent-source :source
+         parent-line :line
+         :as parent-meta} (meta parent)
+        matcher (re-matcher (Pattern/compile (source-match this) Pattern/MULTILINE) parent-source)
         matches (.find matcher)
-        start (.start matcher)
-        end (.end matcher)
-        source (.group matcher)]
-    (with-meta obj {:line (:line parent-meta)
-                    :start-character start
-                    :end-character end
-                    :end-line (:end-line parent-meta)
-                    :source source})))
+        this-start (.start matcher)
+        this-end (.end matcher)
+        source (.group matcher)
+        preceeding-lines (count (re-seq #"\n" (.substring parent-source 0 this-start)))
+        spanned-lines (count (re-seq #"\n" source))]
+    (with-meta this {:line (+ parent-line preceeding-lines)
+                     :start-character (+ parent-start this-start)
+                     :end-character (+ parent-start this-end)
+                     :end-line (+ parent-line preceeding-lines spanned-lines)
+                     :source source})))
+
+(extend-protocol Detailable
+  java.lang.Object
+  (source-match [this] nil)
+  (detailed-meta [this parent] (-detailed-meta this parent))
+  clojure.lang.PersistentVector
+  (source-match [this] (str "\\[\\s*" (apply str (interpose "\\s*" (map source-match this))) "\\s*\\]"))
+  (detailed-meta [this parent] (-detailed-meta this parent))
+  clojure.lang.PersistentList
+  (source-match [this] (str "\\(\\s*" (apply str (interpose "\\s*" (map source-match this))) "\\s*\\)"))
+  (detailed-meta [this parent] (-detailed-meta this parent))
+  java.lang.Long
+  (source-match [this] (str \\ \Q this \\ \E))
+  (detailed-meta [this parent] this)
+  clojure.lang.Symbol
+  (source-match [this] (str \\ \Q (name this) \\ \E))
+  (detailed-meta [this parent] (-detailed-meta this parent))
+  java.lang.String
+  (source-match [this] (str \" \\ \Q this \\ \E \"))
+  (detailed-meta [this parent]
+    this))
 
 (defn- detailed-exprs-with-meta
   [form]
-  (tree-seq sequential? #(map (partial detailed-meta %) (seq %)) form))
+  (tree-seq sequential? #(map (fn [child] (detailed-meta child %)) (seq %)) form))
 
 (defn detailed-exprs
   "Return a seq of all the exprs in form. If form has detailed
