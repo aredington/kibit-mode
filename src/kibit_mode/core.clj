@@ -1,5 +1,6 @@
 (ns kibit-mode.core
   (:require [kibit.check :as c]
+            [kibit.core :as kc]
             [clojure.java.io :as io]
             [clojure.string :as s])
   (:import (java.util.regex Pattern)))
@@ -154,6 +155,20 @@
   which is contained in parent. parent must have detailed metadata as
   returned by detailed-read."))
 
+(defn- -diagnose-mismatch
+  [this parent]
+  (let [source-match (source-match this)
+        parent-source (-> parent meta :source)
+        sub-pats (map #(.substring source-match 0 %) (range (count source-match)))
+        pat-filt (fn [pattern] (try (re-find (Pattern/compile pattern (bit-and Pattern/MULTILINE Pattern/DOTALL)) parent-source)
+                                    (catch Exception e false)))
+        best-pat (last (filter pat-filt sub-pats))]
+    (throw (ex-info (str "Failed to find a match for \"" this "\" in \"" (-> parent meta :source) "\"")
+                   {:this this
+                    :parent parent
+                    :parent-source (-> parent meta :source)
+                    :best-pat best-pat}))))
+
 (defn- -detailed-meta
   [this parent]
   (let [{parent-start :start-character
@@ -161,39 +176,80 @@
          parent-source :source
          parent-line :line
          :as parent-meta} (meta parent)
-        matcher (re-matcher (Pattern/compile (source-match this) Pattern/MULTILINE) parent-source)
-        matches (.find matcher)
-        this-start (.start matcher)
-        this-end (.end matcher)
-        source (.group matcher)
-        preceeding-lines (count (re-seq #"\n" (.substring parent-source 0 this-start)))
-        spanned-lines (count (re-seq #"\n" source))]
+         pattern-source (try (source-match this)
+                             (catch clojure.lang.ExceptionInfo e
+                               (throw (ex-info (str "Could not generate source-match for " (:class (ex-data e)))
+                                               (merge (ex-data e)
+                                                      {:parent-source parent-source})))))
+         matcher (re-matcher (Pattern/compile pattern-source (bit-and Pattern/MULTILINE Pattern/DOTALL)) parent-source)
+         matches (.find matcher)
+         _ (when-not matches (-diagnose-mismatch this parent))
+         this-start (.start matcher)
+         this-end (.end matcher)
+         source (.group matcher)
+         preceeding-lines (count (re-seq #"\n" (.substring parent-source 0 this-start)))
+         spanned-lines (count (re-seq #"\n" source))]
     (with-meta this {:line (+ parent-line preceeding-lines)
                      :start-character (+ parent-start this-start)
                      :end-character (+ parent-start this-end)
                      :end-line (+ parent-line preceeding-lines spanned-lines)
                      :source source})))
 
-(extend-protocol Detailable
-  java.lang.Object
-  (source-match [this] nil)
-  (detailed-meta [this parent] (-detailed-meta this parent))
-  clojure.lang.PersistentVector
-  (source-match [this] (str "\\[\\s*" (apply str (interpose "\\s*" (map source-match this))) "\\s*\\]"))
-  (detailed-meta [this parent] (-detailed-meta this parent))
-  clojure.lang.PersistentList
-  (source-match [this] (str "\\(\\s*" (apply str (interpose "\\s*" (map source-match this))) "\\s*\\)"))
-  (detailed-meta [this parent] (-detailed-meta this parent))
-  java.lang.Long
-  (source-match [this] (str \\ \Q this \\ \E))
-  (detailed-meta [this parent] this)
-  clojure.lang.Symbol
-  (source-match [this] (str \\ \Q (name this) \\ \E))
-  (detailed-meta [this parent] (-detailed-meta this parent))
-  java.lang.String
-  (source-match [this] (str \" \\ \Q this \\ \E \"))
-  (detailed-meta [this parent]
-    this))
+(let [wsc "[ \\t\\n\\x0B\\f\\r,]"
+      any-ws (str wsc \*)
+      some-ws (str wsc \+)]
+  (extend-protocol Detailable
+    java.lang.Object
+    (source-match [this] (throw (ex-info (str "Tried to source-match unknown type: " (class this)) {:instance this :class (class this)})))
+    (detailed-meta [this parent] (-detailed-meta this parent))
+    clojure.lang.PersistentVector
+    (source-match [this] (str "\\[" any-ws (apply str (interpose any-ws (map source-match this))) any-ws "\\]"))
+    (detailed-meta [this parent] (-detailed-meta this parent))
+    clojure.lang.PersistentList
+    (source-match [this] (str "\\(" any-ws (apply str (interpose any-ws (map source-match this))) any-ws "\\)"))
+    (detailed-meta [this parent] (-detailed-meta this parent))
+    clojure.lang.MapEntry
+    (source-match [this] (str (source-match (key this)) some-ws (source-match (val this))))
+    clojure.lang.PersistentArrayMap
+    (source-match [this] (str "\\{" any-ws (apply str (interpose any-ws (map source-match this))) any-ws "\\}"))
+    (detailed-meta [this parent] (-detailed-meta this parent))
+    clojure.lang.Cons
+    (source-match [this] "FROGS")
+                               ;; (throw (ex-info (str "Tried to source-match cons with unknown first element: " (first this))
+                               ;;                 {:instance this
+                               ;;                  :class (class this)
+                               ;;                  :first (first this)
+                               ;;                  :second (second this)}))))
+    (detailed-meta [this parent] (-detailed-meta this parent))
+    clojure.lang.Symbol
+    (source-match [this] (if-let [space (namespace this)]
+                           (str \\ \Q space \/ (name this) \\ \E)
+                           (str \\ \Q (name this) \\ \E)))
+    (detailed-meta [this parent] (-detailed-meta this parent))
+    java.lang.Boolean
+    (source-match [this] (str \\ \Q this \\ \E))
+    (detailed-meta [this parent] this)
+    clojure.lang.Keyword
+    (source-match [this] (if-let [space (namespace this)]
+                           (str \\ \Q \: space \/ (name this) \\ \E)
+                           (str \\ \Q \: (name this) \\ \E)))
+    (detailed-meta [this parent] this)
+    java.lang.Character
+    (source-match [this] (case this
+                           \newline "\\Q\\newline\\E"
+                           \tab "\\Q\\tab\\E"
+                           \space "\\Q\\space\\E"
+                           (str \\ \Q \\ this \\ \E)))
+    (detailed-meta [this parent] this)
+    java.lang.Long
+    (source-match [this] (str \\ \Q this \\ \E))
+    (detailed-meta [this parent] this)
+    java.lang.String
+    (source-match [this] (str \" \\ \Q this \\ \E \"))
+    (detailed-meta [this parent] this)
+    nil
+    (source-match [this] "\\Qnil\\E")
+    (detailed-meta [this parent] nil)))
 
 (defn- detailed-exprs-with-meta
   [form]
@@ -210,39 +266,63 @@
 
 (defn assoc-reporter
   "Given a kibit simplification map, print an emacs-lispy version of it."
-  [file {:keys [expr alt line] :as simplify-map}]
-  (println (str "'((file . \""
-                file
-                "\") (line . "
-                line
-                ") (expr . \""
-                (pr-str expr)
-                "\") (replacement-exp . \""
-                (pr-str alt)
-                "\"))")))
+  [file [expr simp :as simplify-pair]]
+  (let [{:keys [line start-character end-character end-line source] :as expr-meta} (meta expr)]
+    (println (str "'((file . \""
+                  file
+                  "\") (line . "
+                  line
+                  ") (start-char . "
+                  start-character
+                  ") (end-line . "
+                  end-line
+                  ") (end-char . "
+                  end-character
+                  ") (source . "
+                  (pr-str source)
+                  ") (expr . \""
+                  (pr-str expr)
+                  "\") (replacement-exp . \""
+                  (pr-str simp)
+                  "\"))"))))
 
 (defn report-error
-  "Given a kibit simplification, print the line number and normalized
-  form of the expr and the replacement"
-  [file {:keys [expr alt line] :as simplify-map}]
-  (println (str file
-                ":"
-                line
-                ":\n  Replace\n    "
-                (pr-str expr)
-                "\n  with\n    "
-                (pr-str alt)
-                )))
+  "Given a kibit-mode simplification, print the line number and
+  normalized form of the expr and the replacement"
+  [file [expr simp :as simplify-pair]]
+  (let [{:keys [line start-character end-character end-line source] :as expr-meta} (meta expr)]
+    (println (str file
+                  ":"
+                  line
+                  ":\n  Replace\n    "
+                  (pr-str source)
+                  "\n  with\n    "
+                  (pr-str simp)
+                  ))))
+
+(defn simplifications
+  "Given a seq of exprs, check all of them against
+  kibit.check/all-rules, returning a seq of pairs of exprs and their
+  simplifications"
+  [exprs]
+  (letfn [(simp [expr] (kc/simplify-one expr c/all-rules))
+          (pair [expr] (let [simp (simp expr)]
+                         (when-not (= simp expr)
+                           [expr simp])))]
+    (filter (comp not nil?)
+            (map pair exprs))))
 
 (defn check-file
   [file reporter]
   (with-open [reader (io/reader file)]
-    (let [errors (c/check-reader reader)]
-      (doseq [simplify-map errors]
-        (reporter file simplify-map))
-      errors)))
+    (let [forms (detailed-forms (make-detailed-form-reader reader))
+          exprs (mapcat detailed-exprs forms)
+          simplifications (simplifications exprs)]
+      (doseq [simplify-pair simplifications]
+        (reporter file simplify-pair))
+      simplifications)))
 
 (defn -main
   [file]
-  (when-not (empty? (check-file file report-error))
+  (when-not (empty? (check-file file assoc-reporter))
     (System/exit 1)))
