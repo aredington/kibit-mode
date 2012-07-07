@@ -1,6 +1,7 @@
 (ns kibit-mode.core
   (:require [kibit.check :as c]
             [kibit.core :as kc]
+            [kibit-mode.source-attribution :as sa]
             [clojure.java.io :as io]
             [clojure.string :as s])
   (:import (java.util.regex Pattern)))
@@ -145,123 +146,13 @@
         (cons read-result
               (detailed-forms detailed-form-reader))))))
 
-(defprotocol Detailable
-  "Objects which can have detailed source information about them described."
-  (source-match [this] "Returns a string specification of a Java
-  regular expression which, when applied to strings, matches the
-  portion of the string which would generate this when the string is
-  read.")
-  (detailed-meta [this parent] "Returns detailed metadata for this,
-  which is contained in parent. parent must have detailed metadata as
-  returned by detailed-read."))
-
-(defn- -diagnose-mismatch
-  [this parent]
-  (let [source-match (source-match this)
-        parent-source (-> parent meta :source)
-        sub-pats (map #(.substring source-match 0 %) (range (count source-match)))
-        pat-filt (fn [pattern] (try (re-find (Pattern/compile pattern (bit-and Pattern/MULTILINE Pattern/DOTALL)) parent-source)
-                                    (catch Exception e false)))
-        best-pat (last (filter pat-filt sub-pats))]
-    (throw (ex-info (str "Failed to find a match for \"" this "\" in \"" (-> parent meta :source) "\"")
-                   {:this this
-                    :parent parent
-                    :parent-source (-> parent meta :source)
-                    :best-pat best-pat}))))
-
-(defn- -detailed-meta
-  [this parent]
-  (let [{parent-start :start-character
-         parent-end :end-character
-         parent-source :source
-         parent-line :line
-         :as parent-meta} (meta parent)
-         pattern-source (try (source-match this)
-                             (catch clojure.lang.ExceptionInfo e
-                               (throw (ex-info (str "Could not generate source-match for " (:class (ex-data e)))
-                                               (merge (ex-data e)
-                                                      {:parent-source parent-source})))))
-         matcher (re-matcher (Pattern/compile pattern-source (bit-and Pattern/MULTILINE Pattern/DOTALL)) parent-source)
-         matches (.find matcher)
-         _ (when-not matches (-diagnose-mismatch this parent))
-         this-start (.start matcher)
-         this-end (.end matcher)
-         source (.group matcher)
-         preceeding-lines (count (re-seq #"\n" (.substring parent-source 0 this-start)))
-         spanned-lines (count (re-seq #"\n" source))]
-    (with-meta this {:line (+ parent-line preceeding-lines)
-                     :start-character (+ parent-start this-start)
-                     :end-character (+ parent-start this-end)
-                     :end-line (+ parent-line preceeding-lines spanned-lines)
-                     :source source})))
-
-(let [wsc "[ \\t\\n\\x0B\\f\\r,]"
-      any-ws (str wsc \*)
-      some-ws (str wsc \+)]
-  (extend-protocol Detailable
-    java.lang.Object
-    (source-match [this] (throw (ex-info (str "Tried to source-match unknown type: " (class this)) {:instance this :class (class this)})))
-    (detailed-meta [this parent] (-detailed-meta this parent))
-    clojure.lang.PersistentVector
-    (source-match [this] (str "\\[" any-ws (apply str (interpose any-ws (map source-match this))) any-ws "\\]"))
-    (detailed-meta [this parent] (-detailed-meta this parent))
-    clojure.lang.PersistentList
-    (source-match [this] (str "\\(" any-ws (apply str (interpose any-ws (map source-match this))) any-ws "\\)"))
-    (detailed-meta [this parent] (-detailed-meta this parent))
-    clojure.lang.MapEntry
-    (source-match [this] (str (source-match (key this)) some-ws (source-match (val this))))
-    clojure.lang.PersistentArrayMap
-    (source-match [this] (str "\\{" any-ws (apply str (interpose any-ws (map source-match this))) any-ws "\\}"))
-    (detailed-meta [this parent] (-detailed-meta this parent))
-    clojure.lang.Cons
-    (source-match [this] "FROGS")
-                               ;; (throw (ex-info (str "Tried to source-match cons with unknown first element: " (first this))
-                               ;;                 {:instance this
-                               ;;                  :class (class this)
-                               ;;                  :first (first this)
-                               ;;                  :second (second this)}))))
-    (detailed-meta [this parent] (-detailed-meta this parent))
-    clojure.lang.Symbol
-    (source-match [this] (if-let [space (namespace this)]
-                           (str \\ \Q space \/ (name this) \\ \E)
-                           (str \\ \Q (name this) \\ \E)))
-    (detailed-meta [this parent] (-detailed-meta this parent))
-    java.lang.Boolean
-    (source-match [this] (str \\ \Q this \\ \E))
-    (detailed-meta [this parent] this)
-    clojure.lang.Keyword
-    (source-match [this] (if-let [space (namespace this)]
-                           (str \\ \Q \: space \/ (name this) \\ \E)
-                           (str \\ \Q \: (name this) \\ \E)))
-    (detailed-meta [this parent] this)
-    java.lang.Character
-    (source-match [this] (case this
-                           \newline "\\Q\\newline\\E"
-                           \tab "\\Q\\tab\\E"
-                           \space "\\Q\\space\\E"
-                           (str \\ \Q \\ this \\ \E)))
-    (detailed-meta [this parent] this)
-    java.lang.Long
-    (source-match [this] (str \\ \Q this \\ \E))
-    (detailed-meta [this parent] this)
-    java.lang.String
-    (source-match [this] (str \" \\ \Q this \\ \E \"))
-    (detailed-meta [this parent] this)
-    nil
-    (source-match [this] "\\Qnil\\E")
-    (detailed-meta [this parent] nil)))
-
-(defn- detailed-exprs-with-meta
-  [form]
-  (tree-seq sequential? #(map (fn [child] (detailed-meta child %)) (seq %)) form))
-
 (defn detailed-exprs
   "Return a seq of all the exprs in form. If form has detailed
   metadata (as is provided by detailed-read), each expr will also have
   the correct detailed metadata attached."
   [form]
   (if (= (set (keys (meta form))) #{:line :start-character :end-line :end-character :source})
-    (detailed-exprs-with-meta form)
+    (sa/detailed-exprs-with-meta form)
     (tree-seq sequential? seq form)))
 
 (defn assoc-reporter
