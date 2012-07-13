@@ -5,12 +5,55 @@
            (clojure.lang Keyword
                          Symbol
                          Ratio
-                         PersistentVector
-                         PersistentList
-                         PersistentHashSet
-                         PersistentArrayMap)))
+                         IPersistentVector
+                         IPersistentList
+                         IPersistentSet
+                         IPersistentMap)))
 
-;; Matched-by maps a type to a fn returning a regexp matching an instance of that type.
+;;; NOTES:
+
+;; Seems the best way to go is to map the input expr and source file
+;; into the same coordinate space, validate what we can, and infer
+;; what we can't.
+
+;;e.g. The list (:a :b [1 2]) would generate the following coordinate
+;;space
+
+;; { [0] (:a :b [1 2])
+;;   [0 0] :a
+;;   [0 1] :b
+;;   [0 2] [1 2]
+;;   [0 2 0] 1
+;;   [0 2 1] 2}
+
+;; meanwhile the string " (:a :b\n\n[1 2]) would map into the same
+;; coordinate space
+
+;; { [0] "(:a :b\n\n[1 2])"
+;;   [0 0] ":a"
+;;   [0 1] ":b"
+;;   [0 2] "[1 2]"
+;;   [0 2 0] "1"
+;;   [0 2 1] "2"}
+
+;; Given the two maps, the map of objects is authoritative and the map
+;; of strings is hypothetical. Reader literals right now can only be a
+;; tag and one value, which means there's no ambiguity about how a
+;; list of string tokens should collapse to values, only which values
+;; they collapse to
+
+;; After generating the two maps, we can then validate the matches.
+
+;; PROBLEM: String representation of Sets has an authoritative
+;; ordering, data doesn't
+
+;; PROBLEM: A set containing two reader literals that are unknown has
+;; no ordering cues to hint at which value in the set came from which
+;; reader literal. We could adaptively learn reader literal -> type
+;; mappings, perhaps.
+
+;; String map needs metadata. Maybe the values of both maps are
+;; themselves maps and can indicate if they are authoritative or not.
 
 (l/defrel matched-by type matcher-fn)
 (l/facts matched-by
@@ -18,10 +61,10 @@
 
 (l/defrel collection-bounds type start-string end-string)
 (l/facts collection-bounds
-         [[PersistentVector "[" "]"]
-          [PersistentList "(" ")"]
-          [PersistentHashSet "#{" "}"]
-          [PersistentArrayMap "{" "}"]])
+         [[IPersistentVector "[" "]"]
+          [IPersistentList "(" ")"]
+          [IPersistentSet "#{" "}"]
+          [IPersistentMap "{" "}"]])
 
 
 ;; Scalars are values that the reader may return, and represent a
@@ -85,21 +128,36 @@
 (defn vector-sourceo
   [expr source source-match start-index end-index]
   (l/fresh [collection-type collection-start collection-end]
-   (vector-value? expr)
-   (l/project [expr]
-              (l/== collection-type (class expr)))
-   (collection-bounds collection-type collection-start collection-end)
-   (l/project [source collection-start]
-              (l/== start-index (.indexOf source collection-start)))
-   (l/project [source collection-end]
-              (l/== end-index (inc (.indexOf source collection-end))))
-   (l/project [source start-index end-index]
-              (l/== source-match (.substring source start-index end-index)))))
+           (vector-value? expr)
+           (collection-bounds collection-type collection-start collection-end)
+           (l/project [collection-type expr]
+                      (l/== true (isa? (class expr) collection-type)))
+           (l/project [source collection-start]
+                      (l/== start-index (.indexOf source collection-start)))
+           (l/project [source collection-end]
+                      (l/== end-index (inc (.indexOf source collection-end))))
+           (l/project [source start-index end-index]
+                      (l/== source-match (.substring source start-index end-index)))))
+
+(defn list-sourceo
+  "Special goal to check lists, because core.logic may coerce them into lazy seqs."
+  [expr source source-match start-index end-index]
+  (let [isa-list (isa? (class expr) IPersistentList)]
+    (l/fresh [collection-start collection-end]
+             (l/== true isa-list)
+             (collection-bounds IPersistentList collection-start collection-end)
+             (l/project [source collection-start]
+                        (l/== start-index (.indexOf source collection-start)))
+             (l/project [source collection-end]
+                        (l/== end-index (inc (.indexOf source collection-end))))
+             (l/project [source start-index end-index]
+                        (l/== source-match (.substring source start-index end-index))))))
 
 (defn sourceo
   [expr source source-match start-index end-index]
   (l/conde ((scalar-sourceo expr source source-match start-index end-index))
-           ((vector-sourceo expr source source-match start-index end-index))))
+           ((vector-sourceo expr source source-match start-index end-index))
+           ((list-sourceo expr source source-match start-index end-index))))
 
 (defprotocol SpottyMeta
   (spotty-meta [value meta] "Returns `value` with `meta` associated if
@@ -115,21 +173,42 @@
     [this meta]
     this))
 
+(defn match-info
+  "Return a vector of [`source-match` `starting-match-index`
+  `ending-match-index`] given an `expr` and a string `source` that
+  contained that expression."
+  [source expr]
+  (first (l/run 1 [q] (l/fresh [source-match start-index end-index]
+                         (l/== q [source-match start-index end-index])
+                         (sourceo expr source source-match start-index end-index)))))
+
+(defn match-meta
+  "Return a map of sub-expression source attribution metadata, given
+  the parent's source attribution metadata `parent-meta`, and a
+  [`source-match` `starting-match-index` `ending-match-index`] vector
+  `match-info` as returned from match-info. Returns an empty map if
+  there is not sufficient match info."
+  [{:keys [source line start-character] :as parent-meta} match-info]
+  (if (empty? match-info)
+    {}
+    (let [[source-match starting-match-index ending-match-index] match-info
+          start-line (+ line (count (re-seq #"\n" (.substring source 0 starting-match-index))))
+          end-line (+ start-line (count (re-seq #"\n" source-match)))]
+      {:start-character (+ start-character starting-match-index)
+       :end-character (+ start-character ending-match-index)
+       :line start-line
+       :end-line end-line
+       :source source-match})))
+
 (defn source-of
+  "Return `expr` with appropriately scoped source attribution metadata
+  from `form` attached."
   [form expr]
   (if (= form expr)
     expr
-    (let [{source :source
-           line :line
-           start-char :start-character}  (meta form)
-          match-hit (l/run 1 [q] (l/fresh [source-match start-index end-index]
-                                (l/== q [source-match start-index end-index])
-                                (sourceo expr source source-match start-index end-index)))
-          meta {:start-character (+ start-char match-start)
-                :end-character (+ start-char match-end)
-                :line (+ line (count (re-seq #"\n" (.substring source 0 match-start))))
-                :end-line (+ line (count (re-seq #"\n" source-match)))
-                :source source-match}]
+    (let [{source :source :as parent-meta} (meta form)
+           match-info (match-info source expr)
+           meta (match-meta parent-meta match-info)]
       (spotty-meta expr meta))))
 
 (defn detailed-exprs-with-meta
