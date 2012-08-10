@@ -16,38 +16,46 @@
 ;; into the same coordinate space, validate what we can, and infer
 ;; what we can't.
 
-;;e.g. The list (:a :b [1 2]) would generate the following coordinate
-;;space
+;;e.g. The list (:a :b [1 2]) would generate the following vector of maps:
 
-;; { [0] (:a :b [1 2])
-;;   [0 0] :a
-;;   [0 1] :b
-;;   [0 2] [1 2]
-;;   [0 2 0] 1
-;;   [0 2 1] 2}
+;; [{:coords [0] :form (:a :b [1 2]) :auth true}
+;;  {:coords [0 0] :form :a :auth true}
+;;  {:coords [0 1] :form :b :auth true}
+;;  {:coords [0 2] :form [1 2] :auth true}
+;;  {:coords [0 2 0] :form 1 :auth true}
+;;  {:coords [0 2 1] :form 2 :auth true}]
 
-;; meanwhile the string " (:a :b\n\n[1 2]) would map into the same
-;; coordinate space
+;; meanwhile the string " (:a :b\n\n[1 2])" would map into the same
+;; coordinate space with source attribution data
 
-;; { [0] "(:a :b\n\n[1 2])"
-;;   [0 0] ":a"
-;;   [0 1] ":b"
-;;   [0 2] "[1 2]"
-;;   [0 2 0] "1"
-;;   [0 2 1] "2"}
+;; [{:coords [0] :source "(:a :b\n\n[1 2])" :auth true :start 1 :end 15 :start-line 0 :end-line 2}
+;;  {:coords [0 0] :source ":a" :auth true :start 2 :end 4 :start-line 0 :end-line 0 }
+;;  {:coords [0 1] :source ":b" :auth true :start 5 :end 7 :start-line 0 :end-line 0}
+;;  {:coords [0 2] :source "[1 2]" :auth true :start 9 :end 14 :start-line 2 :end-line 2}
+;;  {:coords [0 2 0] :source "1" :auth true :start 10 :end 11 :start-line 2 :end-line 2}
+;;  {:coords [0 2 1] :source "2" :auth true :start 12 :end 13 :start-line 2 :end-line 2}]
 
-;; Given the two maps, the map of objects is authoritative and the map
-;; of strings is hypothetical. Reader literals right now can only be a
-;; tag and one value, which means there's no ambiguity about how a
-;; list of string tokens should collapse to values, only which values
-;; they collapse to
+;; Unify, go home, drink beer.
+
+;; When assembling the maps of coordinate spaces, the assemblers will
+;; flag their entries as authoritative or speculative. For instance,
+;; assembling the map for the set #{:a :b} would generate the
+;; following entries:
+
+;;[{:coords [0] :form #{:a :b} :auth true}
+;; {:coords [0 0] :form :a :auth false}
+;; {:coords [0 1] :form :b :auth false}]
+
+;; The string map that generated it CAN be authoritative regarding ordering.
+
+;; Reader literals right now can only be a tag and
+;; one value, which means there's no ambiguity about how a list of
+;; string tokens should collapse to values, only which values they
+;; collapse to
 
 ;; After generating the two maps, we can then validate the matches.
 
-;; PROBLEM: String representation of Sets has an authoritative
-;; ordering, data doesn't
-
-;; PROBLEM: A set containing two reader literals that are unknown has
+;; PROBLEM: A set containing precisely two reader literals that are unknown has
 ;; no ordering cues to hint at which value in the set came from which
 ;; reader literal. We could adaptively learn reader literal -> type
 ;; mappings, perhaps.
