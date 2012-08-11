@@ -190,6 +190,29 @@
                          (l/== q [source-match start-index end-index])
                          (sourceo expr source source-match start-index end-index)))))
 
+(defn form-map
+  "Returns the form-map of structural metadata for `form`, which is a
+  child of a form described by the structural metadata map
+  `parent-metadata`"
+  [{:keys [coords]} form index]
+  {:coords (conj coords index)
+   :form form
+   :auth (not (set? form))})
+
+(defn value-map
+  "Returns a vector of maps of structural metadata about `form`, each
+  map containing the keys :coords, :form, and :auth specifying the
+  hierarchical coordinates of the entry, the clojure form it is
+  pertaining to, and if the returned information can be considered
+  authoritative or not."
+  ([form] (let [form-map {:coords [0] :form form :auth true}]
+            (value-map form form-map)))
+  ([current-form current-form-map]
+     (if (coll? current-form)
+       (conj (apply concat (map-indexed #(value-map %2 (form-map current-form-map %2 %1)) current-form))
+             current-form-map) 
+       (list current-form-map))))
+
 (defn match-meta
   "Return a map of sub-expression source attribution metadata, given
   the parent's source attribution metadata `parent-meta`, and a
