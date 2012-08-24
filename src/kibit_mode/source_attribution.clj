@@ -63,10 +63,6 @@
 ;; String map needs metadata. Maybe the values of both maps are
 ;; themselves maps and can indicate if they are authoritative or not.
 
-(l/defrel matched-by type matcher-fn)
-(l/facts matched-by
-         [[Object (fn [object] (re-pattern (str "\\Q" (pr-str object) "\\E")))]])
-
 (l/defrel collection-bounds type start-string end-string)
 (l/facts collection-bounds
          [[IPersistentVector "[" "]"]
@@ -74,98 +70,38 @@
           [IPersistentSet "#{" "}"]
           [IPersistentMap "{" "}"]])
 
+(defn whitespace?
+  "Predicate returns true if `ch` is considered whitespace by the
+  Clojure reader."
+  [ch]
+  (or (Character/isWhitespace (char ch)) (= \, ch)))
 
-;; Scalars are values that the reader may return, and represent a
-;; single scalar value, in direct opposition to collections.
+(defn contains-whitespace?
+  [string]
+  (some whitespace? (seq string)))
 
-(defn scalar-value?
-  [instance]
-  (l/project [instance]
-             (l/== false (coll? instance))))
-
-;; Vectors are values that the reader may return, and represent zero
-;; or more scalar values grouped together, potentially with some
-;; ordering, e.g. collections.
-
-(defn vector-value?
-  [instance]
-  (l/project [instance]
-             (l/== true (coll? instance))))
-
-;; Primitives are values that cannot have metadata associated with
-;; them. All primitives should be scalars. Not all scalars are
-;; primitive.
-
-(defn primitive-value?
-  [instance]
-  (l/project [instance]
-             (l/== false (isa? (class instance) clojure.lang.IObj))))
-
-;; Due to projections this goal will likely only work with instance
-;; grounded. Still valuable as there may be many different ways to
-;; express the same value, e.g. the Long 48 can be expressed as the
-;; string "48" or as the string "14r36"
-
-(defn matching-regexpo
-  [instance regexp]
-  (l/fresh [re-gen]
-           (l/conde ((scalar-value? instance)
-                     (matched-by Object re-gen)
-                     (l/project [instance re-gen]
-                                (l/== regexp (re-gen instance)))))))
-
-;; Goal to relate a expression (an object read from Clojure's reader)
-;; and a source block with precise indices in the source block the
-;; describe where and only where that expression was read from.
-
-(defn scalar-sourceo
-  [expr source source-match start-index end-index]
-  (l/fresh [regexp]
-           (scalar-value? expr)
-           (matching-regexpo expr regexp)
-           (l/project [source regexp]
-                      (l/== source-match (re-find regexp source)))
-           (l/project [source regexp]
-                      (l/== [start-index end-index]
-                            (let [matcher (re-matcher regexp source)
-                                  _ (.find matcher)
-                                  start (.start matcher)
-                                  end (.end matcher)]
-                              [start end])))))
-
-(defn vector-sourceo
-  [expr source source-match start-index end-index]
-  (l/fresh [collection-type collection-start collection-end]
-           (vector-value? expr)
-           (collection-bounds collection-type collection-start collection-end)
-           (l/project [collection-type expr]
-                      (l/== true (isa? (class expr) collection-type)))
+(defn vector-type-sourceo
+  [source type truthiness]
+  (println source type truthiness)
+  (l/fresh [collection-start collection-end]
+           (collection-bounds type collection-start collection-end)
            (l/project [source collection-start]
-                      (l/== start-index (.indexOf source collection-start)))
+                      (l/== (.startsWith source collection-start) truthiness))
            (l/project [source collection-end]
-                      (l/== end-index (inc (.indexOf source collection-end))))
-           (l/project [source start-index end-index]
-                      (l/== source-match (.substring source start-index end-index)))))
+                      (l/== (.endsWith source collection-end) truthiness))))
 
-(defn list-sourceo
-  "Special goal to check lists, because core.logic may coerce them into lazy seqs."
-  [expr source source-match start-index end-index]
-  (let [isa-list (isa? (class expr) IPersistentList)]
-    (l/fresh [collection-start collection-end]
-             (l/== true isa-list)
-             (collection-bounds IPersistentList collection-start collection-end)
-             (l/project [source collection-start]
-                        (l/== start-index (.indexOf source collection-start)))
-             (l/project [source collection-end]
-                        (l/== end-index (inc (.indexOf source collection-end))))
-             (l/project [source start-index end-index]
-                        (l/== source-match (.substring source start-index end-index))))))
+(l/defne vector-sourceo
+  [source truthiness]
+  ([_ true] (l/fresh [type]
+                     (vector-type-sourceo source type truthiness)))
+  ([_ false] #_(Check all collection-bounds to make sure that source doesn't satisfy any of them)))
 
-(defn sourceo
-  [expr source source-match start-index end-index]
-  (l/conde ((scalar-sourceo expr source source-match start-index end-index))
-           ((vector-sourceo expr source source-match start-index end-index))
-           ((list-sourceo expr source source-match start-index end-index))))
+(defn child-source-blockso
+  [parent-source child-source child-source-start child-source-end]
+  (l/conda ((l/all (vector-sourceo parent-source true)
+                   (l/project [parent-source child-source child-source-start child-source-end]
+                              (l/== (.substring parent-source child-source-start child-source-end) child-source))
+                   #_(Ensure that the child block is the smallest matching block)))))
 
 (defprotocol SpottyMeta
   (spotty-meta [value meta] "Returns `value` with `meta` associated if
@@ -181,20 +117,11 @@
     [this meta]
     this))
 
-(defn match-info
-  "Return a vector of [`source-match` `starting-match-index`
-  `ending-match-index`] given an `expr` and a string `source` that
-  contained that expression."
-  [source expr]
-  (first (l/run 1 [q] (l/fresh [source-match start-index end-index]
-                         (l/== q [source-match start-index end-index])
-                         (sourceo expr source source-match start-index end-index)))))
-
 (defn form-map
-  "Returns the form-map of structural metadata for `form`, which is a
-  child of a form described by the structural metadata map
+  "Returns the form-map of structural metadata for `form`, which is the
+  `index`ed child of a form described by the structural metadata map
   `parent-metadata`"
-  [{:keys [coords]} form index]
+  [{:keys [coords] :as parent-metadata} form index]
   {:coords (conj coords index)
    :form form
    :auth (not (set? form))})
@@ -210,8 +137,65 @@
   ([current-form current-form-map]
      (if (coll? current-form)
        (conj (apply concat (map-indexed #(value-map %2 (form-map current-form-map %2 %1)) current-form))
-             current-form-map) 
+             current-form-map)
        (list current-form-map))))
+
+(defn coll-source?
+  "Predicate. Tests if `source` describes a Clojure collection or not."
+  [source]
+  (not (empty? (l/run 1 [q] (vector-sourceo source true)))))
+
+(defn source-block-map
+  "Returns the source-map of structural metadata for `source-block`,
+  which is the `index`ed child of a span of Clojure source described
+  by the structural metadata map `parent-metadata`"
+  [{:keys [coords start start-line] :as parent-metadata}
+   [source block-start block-end block-start-line block-end-line :as source-block]
+   index]
+  {:coords (conj coords index)
+   :source source
+   :start (+ start block-start)
+   :end (+ start block-end)
+   :start-line (+ start-line block-start-line)
+   :end-line (+ start-line block-end-line)})
+
+(defn source-blocks
+  "Returns the source blocks describing the immediate children of the
+  form described by `source`. A source block is a vector of data
+  containing, in order: source, start index, end index, start line,
+  end line. All positional elements of the vector are relative to the
+  parent."
+  [source]
+  )
+
+(defn source-map
+  "Returns a vector of maps of structural metadata about `source`,
+  each map containing the keys :coords, :source, :auth, :start,
+  :end, :start-line and :end-line specifying the hierarchical
+  coordinates of the entry, the relevant portion of source pertaining
+  to the entry, if the returned information can be considered
+  authoritative, and positional information about the source in the
+  file from which it came."
+  ;; Assumptions:
+  ;;
+  ;; 1) The block of source provided is coming from metadata on a form
+  ;; that was read; this means it's valid.
+  ;;
+  ;; 2) The block of source provided starts and ends on syntactically
+  ;; significant characters.
+  ([source] (let [start-map {:coords [0]
+                             :source source
+                             :auth false
+                             :start 0
+                             :end (count source)
+                             :start-line 0
+                             :end-line (count (re-seq #"\n" source))}]
+              (source-map source start-map)))
+  ([current-source current-source-map]
+     (if (coll-source? current-source)
+       (conj (apply concat (map-indexed #(source-map %2 (source-block-map current-source-map %2 %1)) (source-blocks current-source))
+                    current-source-map))
+       (list current-source-map))))
 
 (defn match-meta
   "Return a map of sub-expression source attribution metadata, given
