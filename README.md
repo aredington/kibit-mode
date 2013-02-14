@@ -14,6 +14,7 @@ idiomatic.
 
 ## Configuration
 
+### Via el-get
 I use el-get to manage my Emacs config. To add kibit-mode, I added the
 following to my package definitions:
 
@@ -29,6 +30,36 @@ following to my package definitions:
 The important bits are to get kibit-mode.el on your load-path, require
 it, and add it as a hook to clojure-mode. Hopefully this works for you
 if you also use el-get, if you do not use el-get you are on your own.
+
+### Via package.el [melpa](http://melpa.milkbox.net/)
+
+You can also install kibit-mode with package.el whichis built-in
+package manager in Emacs 24+. If you use Emacs 23, you can get
+[package.el](http://bit.ly/pkg-el23) yourself.
+
+To install kibit-mode, you need this to your `~/.emacs.d/init.el`.
+
+```lisp
+(require 'package)
+(add-to-list 'package-archives
+             '("melpa" . "http://melpa.milkbox.net/packages/") t)
+(package-initialize)
+```
+
+And then you can install kibit-mode with the following command:
+
+<kbd>M-x package-install [RET] kibit-mode [RET]</kbd>
+
+or by adding this bit of Emacs Lisp code to your Emacs initialization file(`.emacs` or `init.el`):
+
+```lisp
+(when (not (package-installed-p 'kibit-mode)
+  (package-install 'kibit-mode)
+```
+
+If the installation dosen't work try refreshing the package list:
+
+<kbd>M-x package-refresh-contents [RET]</kbd>
 
 ## Usage
 
