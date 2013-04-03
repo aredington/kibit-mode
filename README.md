@@ -97,6 +97,14 @@ code for you as you write. It will highlight the line which starts the
 form relevant to kibit's suggestion. This part is pretty ugly and
 hacked together with a shell script, be warned.
 
+To use kibit-mode with
+[flycheck](https://github.com/lunaryorn/flycheck), add the following to
+your emacs config:
+
+```
+(add-hook 'clojure-mode-hook 'flycheck-mode)
+```
+
 ## License
 
 Copyright (C) 2012 Alex Redington

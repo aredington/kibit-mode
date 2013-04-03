@@ -2,6 +2,7 @@
 
 ;; Copyright (C) 2012 Alex Redington <http://www.holychao.com>
 ;; Authors: Alex Redington
+;;          Peter Vasil <mail@petervasil.net>
 ;; Created: 2012
 ;; Version: 0.1
 ;; Keywords: clojure kibit
@@ -109,6 +110,15 @@ Emacs Lisp package."))
 (push '("\\(.*\\):\\([0-9]+\\): \\(ERROR: .* CORRECTION: .*\\)"
         1 2 nil 3)
       flymake-err-line-patterns)
+
+(eval-after-load 'flycheck
+  '(progn
+     (flycheck-declare-checker clojure-kibit
+       "A Clojure code analyzer using the kibit utility."
+       :command `(,(concat kibit-mode-path "bin/kibit-flymake.sh") source)
+       :error-patterns '(("\\(?1:.*\\):\\(?2:[0-9]+\\): \\(?4:ERROR: .* CORRECTION: .*\\)" error))
+       :modes 'clojure-mode)
+     (add-to-list 'flycheck-checkers 'clojure-kibit)))
 
 (provide 'kibit-mode)
 ;;; kibit-mode.el ends here
