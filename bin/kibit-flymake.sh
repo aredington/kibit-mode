@@ -1,3 +1,4 @@
+#! /bin/sh
 # Setting basedir on flymake tasks doesn't actually get set beyond a
 # logging statement, so we hijack the CWD using this script to farm
 # out the job to leiningen
