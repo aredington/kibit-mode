@@ -113,11 +113,11 @@ Emacs Lisp package."))
 
 (eval-after-load 'flycheck
   '(progn
-     (flycheck-declare-checker clojure-kibit
+     (flycheck-define-checker clojure-kibit
        "A Clojure code analyzer using the kibit utility."
-       :command `(,(concat kibit-mode-path "bin/kibit-flymake.sh") source)
-       :error-patterns '(("\\(?1:.*\\):\\(?2:[0-9]+\\): \\(?4:ERROR: .* CORRECTION: .*\\)" error))
-       :modes 'clojure-mode)
+       :command ((eval (concat kibit-mode-path "bin/kibit-flymake.sh")) source)
+       :error-patterns ((error line-start (file-name) ":" line ": " (message) line-end ))
+       :modes clojure-mode)
      (add-to-list 'flycheck-checkers 'clojure-kibit)))
 
 (provide 'kibit-mode)
