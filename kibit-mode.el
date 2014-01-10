@@ -116,11 +116,13 @@ Emacs Lisp package."))
      (cond
       ;; New macro definition
       ((fboundp 'flycheck-define-checker)
-       (flycheck-define-checker clojure-kibit
-         "A Clojure code analyzer using the kibit utility."
-         :command ((eval (concat kibit-mode-path "bin/kibit-flymake.sh")) source)
-         :error-patterns ((error line-start (file-name) ":" line ": ERROR: " (message) line-end ))
-         :modes clojure-mode))
+       (progn
+           (add-to-list 'exec-path (concat kibit-mode-path "bin"))
+           (flycheck-define-checker clojure-kibit
+             "A Clojure code analyzer using the kibit utility."
+             :command ("kibit-flymake.sh" source)
+             :error-patterns ((error line-start (file-name) ":" line ": ERROR: " (message) line-end ))
+             :modes clojure-mode)))
       ;; Backwards compatibility
       ((fboundp 'flycheck-declare-checker)
        (flycheck-declare-checker
