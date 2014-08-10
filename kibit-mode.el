@@ -122,7 +122,7 @@ Emacs Lisp package."))
              "A Clojure code analyzer using the kibit utility."
              :command ("kibit-flymake.sh" source)
              :error-patterns ((error line-start (file-name) ":" line ": ERROR: " (message) line-end ))
-             :modes clojure-mode)))
+             :modes (clojure-mode clojurescript-mode))))
       ;; Backwards compatibility
       ((fboundp 'flycheck-declare-checker)
        (flycheck-declare-checker
