@@ -133,5 +133,9 @@ Emacs Lisp package."))
         :modes 'clojure-mode)))
      (add-to-list 'flycheck-checkers 'clojure-kibit)))
 
+(eval-after-load 'exec-path-from-shell
+  '(defadvice exec-path-from-shell-initialize (after reset-kibit-path activate)
+     (add-to-list 'exec-path (concat kibit-mode-path "bin"))))
+
 (provide 'kibit-mode)
 ;;; kibit-mode.el ends here
