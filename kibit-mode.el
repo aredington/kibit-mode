@@ -6,8 +6,7 @@
 ;; Created: 2012
 ;; Version: 0.1
 ;; Keywords: clojure kibit
-;; Package-Requires: ((clojure-mode "1.11.5")
-;;                    (mode-compile "2.29"))
+;; Package-Requires: ((clojure-mode "1.11.5") (mode-compile "2.29"))
 
 ;;; Commentary:
 ;;
